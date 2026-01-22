@@ -1,15 +1,16 @@
-/// JPG图片压缩服务, 使用ImageMagick进行质量参数压缩.
+/// JPG图片压缩服务, 支持 ImageMagick 和 cjpegli.
 ///
 /// 用法:
 /// ```dart
 /// final compressor = ImageCompressor();
-/// final result = await compressor.compressJpg('/path/to/input.jpg', quality: 85);
+/// final result = await compressor.compress('/path/to/input.jpg', config);
 /// ```
 library;
 
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import '../models/compress_config.dart';
 
 class CompressionResult {
   final String outputPath;
@@ -19,11 +20,7 @@ class CompressionResult {
   /// 压缩比, 压缩后/压缩前, 越小越好.
   final double ratio;
 
-  CompressionResult({
-    required this.outputPath,
-    required this.originalSize,
-    required this.compressedSize,
-  }) : ratio = compressedSize / originalSize;
+  CompressionResult({required this.outputPath, required this.originalSize, required this.compressedSize}) : ratio = compressedSize / originalSize;
 }
 
 class ImageCompressor {
@@ -40,45 +37,44 @@ class ImageCompressor {
     return _cacheDir!;
   }
 
-  /// 压缩JPG图片.
-  Future<CompressionResult> compressJpg(
-    String inputPath, {
-    int quality = 80,
-    void Function(double progress)? onProgress,
-  }) async {
+  /// 根据配置压缩图片.
+  Future<CompressionResult> compress(String inputPath, CompressConfig config, {void Function(double progress)? onProgress}) async {
     final inputFile = File(inputPath);
     final originalSize = await inputFile.length();
 
-    // 生成输出路径: 缓存目录下, 用原路径hash + 文件名避免冲突
+    // 生成输出路径
     final cacheDir = await _getCacheDir();
-    final pathHash = inputPath.hashCode.toRadixString(16);
+    final pathHash = inputPath.hashCode.toUnsigned(32).toRadixString(16).padLeft(8, '0');
     final basename = p.basenameWithoutExtension(inputPath);
     final ext = p.extension(inputPath);
     final outputPath = p.join(cacheDir.path, '${pathHash}_$basename$ext');
 
     onProgress?.call(0.1);
 
-    // 调用ImageMagick压缩
-    final result = await Process.run('magick', [
-      inputPath,
-      '-quality',
-      quality.toString(),
-      outputPath,
-    ]);
+    // 构建命令
+    final tool = config.toolDef;
+    if (tool == null) throw Exception('未知工具: ${config.toolId}');
+    final executable = tool.executable;
+    final args = config.buildCommand(inputPath, outputPath);
+
+    final result = await Process.run(executable, args);
 
     onProgress?.call(0.9);
 
     if (result.exitCode != 0) {
-      throw Exception('ImageMagick压缩失败: ${result.stderr}');
+      throw Exception('$executable 压缩失败: ${result.stderr}');
     }
 
     final compressedSize = await File(outputPath).length();
     onProgress?.call(1.0);
 
-    return CompressionResult(
-      outputPath: outputPath,
-      originalSize: originalSize,
-      compressedSize: compressedSize,
-    );
+    return CompressionResult(outputPath: outputPath, originalSize: originalSize, compressedSize: compressedSize);
+  }
+
+  /// 兼容旧接口, 使用默认配置压缩.
+  Future<CompressionResult> compressJpg(String inputPath, {int quality = 80, void Function(double progress)? onProgress}) {
+    final config = CompressConfig();
+    config.setParam('quality', quality);
+    return compress(inputPath, config, onProgress: onProgress);
   }
 }

@@ -4,11 +4,16 @@ import 'package:flutter/gestures.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'color_schemes.dart';
 import 'models/image_item.dart';
+import 'models/compress_config.dart';
+import 'models/config_schema.dart';
 import 'widgets/image_grid.dart';
 import 'services/image_compressor.dart';
+import 'pages/preferences_page.dart';
 import 'intents.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ConfigSchema.load();
   runApp(const MainApp());
 }
 
@@ -37,6 +42,7 @@ class _HomePageState extends State<HomePage> {
   final List<ImageItem> _items = [];
   final Set<String> _selectedPaths = {};
   final _compressor = ImageCompressor();
+  CompressConfig _config = CompressConfig();
   bool _isDragging = false;
   double _tileWidthRatio = 0.15; // 图块宽度占窗口宽度的比例
   int? _lastSelectedIndex; // 用于 Shift 批量选择
@@ -136,7 +142,7 @@ class _HomePageState extends State<HomePage> {
     await Future.wait(
       pathsToCompress.map((p) async {
         final idx = _items.indexWhere((i) => i.path == p);
-        final result = await _compressor.compressJpg(p, quality: 85);
+        final result = await _compressor.compress(p, _config);
         setState(() {
           _items[idx].isCompressing = false;
           _items[idx].compressedSize = result.compressedSize;
@@ -180,6 +186,13 @@ class _HomePageState extends State<HomePage> {
     return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
   }
 
+  Future<void> _openPreferences() async {
+    final result = await Navigator.push<CompressConfig>(context, MaterialPageRoute(builder: (_) => PreferencesPage(config: _config)));
+    if (result != null) {
+      setState(() => _config = result);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -212,6 +225,8 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => _focusNode.requestFocus(),
                   child: Column(
                     children: [
+                      // Top bar
+                      _buildTopBar(context),
                       // 主内容区
                       Expanded(
                         child: DropTarget(
@@ -301,6 +316,21 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+      ),
+      child: Row(
+        children: [TextButton.icon(onPressed: _openPreferences, icon: const Icon(Icons.settings, size: 18), label: const Text('首选项'))],
       ),
     );
   }

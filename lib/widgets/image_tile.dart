@@ -58,7 +58,7 @@ class ImageTile extends StatelessWidget {
                     File(displayPath),
                     width: width - 6,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => SizedBox(
+                    errorBuilder: (_, _, _) => SizedBox(
                       width: width - 6,
                       height: maxHeight - 6,
                       child: const Center(child: Icon(Icons.broken_image)),

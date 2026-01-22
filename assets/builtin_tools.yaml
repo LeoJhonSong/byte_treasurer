@@ -1,0 +1,98 @@
+# Byte Treasurer 内置压缩工具配置
+# 使用 Jinja2 模板语法
+
+tools:
+  imagemagick:
+    name: ImageMagick
+    executable: magick
+  cjpegli:
+    name: cjpegli
+    executable: cjpegli
+
+formats:
+  jpg:
+    tools: [cjpegli, imagemagick]
+    
+    params:
+      quality:
+        type: slider
+        label: 压缩质量
+        default: 85
+        range: [0, 100]
+        description: 0-100, 越高质量越好
+      
+      chroma:
+        type: picker
+        label: 色度子采样
+        default: "4:2:0"
+        description: 影响色彩精度与体积
+        options:
+          "4:4:4": 高质量
+          "4:2:0": 高压缩
+      
+      progressive:
+        type: picker
+        label: 编码模式
+        default: progressive
+        description: 渐进式支持逐步加载
+        options:
+          sequential: 顺序
+          progressive: 渐进式
+      
+      strip:
+        type: switcher
+        label: 移除元数据
+        default: true
+        description: 移除 EXIF/ICC 等元数据
+      
+      huffman:
+        type: switcher
+        label: 优化霍夫曼表
+        default: true
+        description: 无损优化编码表
+      
+      smoothing:
+        type: slider
+        label: 平滑/降噪
+        default: 0
+        range: [0, 100]
+        description: 减少压缩噪点
+      
+      adaptive:
+        type: switcher
+        label: 自适应量化
+        default: true
+        description: 根据图像内容动态调整量化
+      
+      xyb:
+        type: switcher
+        label: XYB 色彩空间
+        default: false
+        description: JPEG XL 同源的感知色彩空间
+      
+      std_quant:
+        type: switcher
+        label: 标准量化表
+        default: false
+        description: 使用 JPEG 标准量化表
+
+    tool_args:
+      imagemagick:
+        _input: "{{ input }}"
+        quality: "-quality {{ quality }}"
+        chroma: "-sampling-factor {{ chroma }}"
+        progressive: "{% if progressive == 'progressive' %}-interlace Plane{% endif %}"
+        strip: "{% if strip %}-strip{% endif %}"
+        huffman: "{% if huffman %}-define jpeg:optimize-coding=true{% endif %}"
+        smoothing: "{% if smoothing > 0 %}-gaussian-blur 0x{{ smoothing / 50 }}{% endif %}"
+        _output: "{{ output }}"
+      
+      cjpegli:
+        _input: "{{ input }}"
+        _output: "{{ output }}"
+        quality: "-q {{ quality }}"
+        chroma: "--chroma_subsampling={{ {'4:4:4': '444', '4:2:0': '420'}[chroma] }}"
+        progressive: "-p {{ {'sequential': '0', 'progressive': '2'}[progressive] }}"
+        adaptive: "{% if not adaptive %}--noadaptive_quantization{% endif %}"
+        xyb: "{% if xyb %}--xyb{% endif %}"
+        std_quant: "{% if std_quant %}--std_quant{% endif %}"
