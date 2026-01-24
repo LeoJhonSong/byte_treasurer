@@ -5,6 +5,13 @@ import 'package:yaml/yaml.dart';
 import 'package:yaml_writer/yaml_writer.dart';
 import 'config_schema.dart';
 
+/// 压缩模式
+enum CompressMode {
+  totalSizeLimit, // 总大小上限
+  fileSizeLimit, // 单文件大小上限
+  paramConfig, // 参数配置
+}
+
 /// 压缩配置
 class CompressConfig {
   String formatId;
@@ -13,12 +20,20 @@ class CompressConfig {
   String customCommand;
   Map<String, dynamic> params;
 
+  // 压缩模式
+  CompressMode mode;
+  int totalSizeLimitKB; // 总大小上限 (KB)
+  int fileSizeLimitKB; // 单文件大小上限 (KB)
+
   CompressConfig({
     this.formatId = 'jpg',
     String? toolId,
     this.useCustomCommand = false,
     this.customCommand = '',
     Map<String, dynamic>? params,
+    this.mode = CompressMode.paramConfig,
+    this.totalSizeLimitKB = 5120, // 默认5MB
+    this.fileSizeLimitKB = 500, // 默认500KB
   }) : toolId = toolId ?? ConfigSchema.getFormat('jpg')?.defaultToolId ?? 'cjpegli',
        params = params ?? ConfigSchema.getFormat('jpg')?.getDefaultValues() ?? {};
 

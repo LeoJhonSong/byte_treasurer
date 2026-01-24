@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:panes/panes.dart';
 import 'color_schemes.dart';
 import 'models/image_item.dart';
 import 'models/compress_config.dart';
@@ -9,6 +10,7 @@ import 'models/config_schema.dart';
 import 'widgets/image_grid.dart';
 import 'services/image_compressor.dart';
 import 'pages/preferences_page.dart';
+import 'utils/format.dart';
 import 'intents.dart';
 
 void main() async {
@@ -23,10 +25,25 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      theme: ThemeData(useMaterial3: true, colorScheme: lightColorScheme),
-      darkTheme: ThemeData(useMaterial3: true, colorScheme: darkColorScheme),
+      theme: _buildTheme(lightColorScheme),
+      darkTheme: _buildTheme(darkColorScheme),
       debugShowCheckedModeBanner: false,
       home: const HomePage(),
+    );
+  }
+
+  ThemeData _buildTheme(ColorScheme colorScheme) {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      inputDecorationTheme: InputDecorationTheme(
+        border: const OutlineInputBorder(),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: colorScheme.outline)),
+        disabledBorder: OutlineInputBorder(borderSide: BorderSide(color: colorScheme.outlineVariant)),
+        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: colorScheme.primary, width: 2)),
+      ),
     );
   }
 }
@@ -47,13 +64,27 @@ class _HomePageState extends State<HomePage> {
   double _tileWidthRatio = 0.15; // 图块宽度占窗口宽度的比例
   int? _lastSelectedIndex; // 用于 Shift 批量选择
   final FocusNode _focusNode = FocusNode();
+  bool _showSettingsPanel = true; // 压缩设置面板可见性
+  late final PaneController _paneController;
 
   static const double _minTileWidthPx = 80; // 最小像素宽度
   static const double _zoomStep = 0.03; // 缩放步进
 
   @override
+  void initState() {
+    super.initState();
+    _paneController = PaneController(
+      entries: [
+        PaneEntry(id: 'browse', initialSize: PaneSize.fraction(1.0)),
+        PaneEntry(id: 'settings', initialSize: PaneSize.pixel(320), minSize: PaneSize.pixel(280), maxSize: PaneSize.pixel(600), autoHide: true),
+      ],
+    );
+  }
+
+  @override
   void dispose() {
     _focusNode.dispose();
+    _paneController.dispose();
     super.dispose();
   }
 
@@ -67,7 +98,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // 选择逻辑: isCtrl 切换选中, isShift 范围选, 否则单选
+  // 选择逻辑: isCtrl 切换选中, isShift 范围选, 单击已选中则取消, 否则单选
   void _handleTap(String path, {bool isCtrl = false, bool isShift = false}) {
     final idx = _items.indexWhere((i) => i.path == path);
     if (idx == -1) return;
@@ -89,10 +120,15 @@ class _HomePageState extends State<HomePage> {
         }
         _lastSelectedIndex = idx;
       } else {
-        // 单击: 单选
-        _selectedPaths.clear();
-        _selectedPaths.add(path);
-        _lastSelectedIndex = idx;
+        // 单击: 已选中则取消, 否则单选
+        if (_selectedPaths.contains(path) && _selectedPaths.length == 1) {
+          _selectedPaths.clear();
+          _lastSelectedIndex = null;
+        } else {
+          _selectedPaths.clear();
+          _selectedPaths.add(path);
+          _lastSelectedIndex = idx;
+        }
       }
     });
   }
@@ -130,6 +166,8 @@ class _HomePageState extends State<HomePage> {
       return idx != -1 && !_items[idx].isCompressed && !_items[idx].isCompressing;
     }).toList();
 
+    if (pathsToCompress.isEmpty) return;
+
     // 标记所有待压缩项为压缩中
     setState(() {
       for (final p in pathsToCompress) {
@@ -138,19 +176,40 @@ class _HomePageState extends State<HomePage> {
       }
     });
 
-    // 并行压缩
-    await Future.wait(
-      pathsToCompress.map((p) async {
-        final idx = _items.indexWhere((i) => i.path == p);
-        final result = await _compressor.compress(p, _config);
-        setState(() {
-          _items[idx].isCompressing = false;
-          _items[idx].compressedSize = result.compressedSize;
-          _items[idx].compressedPath = result.outputPath;
-          _items[idx].showCompressed = true;
-        });
-      }),
-    );
+    // 根据模式选择压缩方式
+    if (_config.mode == CompressMode.totalSizeLimit && pathsToCompress.length > 1) {
+      // 总大小模式: 批量压缩
+      final results = await _compressor.compressBatchToTotalSize(
+        pathsToCompress,
+        _config.totalSizeLimitKB * 1024,
+        _config,
+      );
+      setState(() {
+        for (int i = 0; i < pathsToCompress.length; i++) {
+          final idx = _items.indexWhere((item) => item.path == pathsToCompress[i]);
+          if (idx != -1) {
+            _items[idx].isCompressing = false;
+            _items[idx].compressedSize = results[i].compressedSize;
+            _items[idx].compressedPath = results[i].outputPath;
+            _items[idx].showCompressed = true;
+          }
+        }
+      });
+    } else {
+      // 单文件模式或参数配置模式: 并行压缩
+      await Future.wait(
+        pathsToCompress.map((p) async {
+          final idx = _items.indexWhere((i) => i.path == p);
+          final result = await _compressor.compress(p, _config);
+          setState(() {
+            _items[idx].isCompressing = false;
+            _items[idx].compressedSize = result.compressedSize;
+            _items[idx].compressedPath = result.outputPath;
+            _items[idx].showCompressed = true;
+          });
+        }),
+      );
+    }
   }
 
   void _handleRevert(String path) {
@@ -180,17 +239,16 @@ class _HomePageState extends State<HomePage> {
   int get _totalOriginalSize => _items.fold(0, (sum, i) => sum + i.originalSize);
   int get _totalCompressedSize => _items.fold(0, (sum, i) => sum + (i.compressedSize ?? i.originalSize));
 
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
+  // 获取预览用样本图片路径
+  String? get _sampleImagePath {
+    if (_selectedPaths.isNotEmpty) return _selectedPaths.first;
+    if (_items.isNotEmpty) return _items.first.path;
+    return null;
   }
 
-  Future<void> _openPreferences() async {
-    final result = await Navigator.push<CompressConfig>(context, MaterialPageRoute(builder: (_) => PreferencesPage(config: _config)));
-    if (result != null) {
-      setState(() => _config = result);
-    }
+  void _toggleSettingsPanel() {
+    _paneController.toggle('settings');
+    setState(() => _showSettingsPanel = _paneController.isVisible('settings'));
   }
 
   @override
@@ -227,29 +285,23 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       // Top bar
                       _buildTopBar(context),
-                      // 主内容区
+                      // 主内容区: 图片浏览 + 压缩设置面板
                       Expanded(
-                        child: DropTarget(
-                          onDragEntered: (_) => setState(() => _isDragging = true),
-                          onDragExited: (_) => setState(() => _isDragging = false),
-                          onDragDone: (details) {
-                            setState(() => _isDragging = false);
-                            _handleFilesDropped(details.files.map((f) => f.path).toList());
-                          },
-                          child: SizedBox.expand(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: _isDragging ? Border.all(color: Theme.of(context).colorScheme.primary, width: 3) : null,
-                              ),
-                              child: ImageGrid(
-                                items: _items,
-                                selectedPaths: _selectedPaths,
-                                tileWidth: tileWidth,
-                                onTap: _handleTap,
-                                onCompress: _handleCompress,
-                                onRevert: _handleRevert,
-                              ),
-                            ),
+                        child: PaneTheme(
+                          data: PaneThemeData(
+                            resizerColor: Theme.of(context).colorScheme.outlineVariant,
+                            resizerHoverColor: Theme.of(context).colorScheme.primary,
+                            resizerThickness: 4,
+                            resizerHitTestThickness: 8,
+                          ),
+                          child: MultiPane(
+                            direction: Axis.horizontal,
+                            controller: _paneController,
+                            paneBuilder: (context, id) {
+                              if (id == 'browse') return _buildBrowsePanel(context, tileWidth);
+                              if (id == 'settings') return CompressSettingsPanel(config: _config, sampleImagePath: _sampleImagePath, onConfigChanged: (c) => setState(() => _config = c));
+                              return const SizedBox();
+                            },
                           ),
                         ),
                       ),
@@ -282,10 +334,10 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(width: 16),
           // 原大小
           if (_items.isNotEmpty) ...[
-            Text('原: ${_formatSize(_totalOriginalSize)}', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+            Text('原: ${formatSize(_totalOriginalSize)}', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
             const SizedBox(width: 16),
             // 压缩后大小
-            Text('压缩后: ${_formatSize(_totalCompressedSize)}', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+            Text('压缩后: ${formatSize(_totalCompressedSize)}', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
           ],
           const Spacer(),
           // 缩放滑条 (支持滚轮)
@@ -320,6 +372,24 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // 浏览面板 (拖放区 + 图片网格)
+  Widget _buildBrowsePanel(BuildContext context, double tileWidth) {
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDragging = true),
+      onDragExited: (_) => setState(() => _isDragging = false),
+      onDragDone: (details) {
+        setState(() => _isDragging = false);
+        _handleFilesDropped(details.files.map((f) => f.path).toList());
+      },
+      child: SizedBox.expand(
+        child: Container(
+          decoration: BoxDecoration(border: _isDragging ? Border.all(color: Theme.of(context).colorScheme.primary, width: 3) : null),
+          child: ImageGrid(items: _items, selectedPaths: _selectedPaths, tileWidth: tileWidth, onTap: _handleTap, onCompress: _handleCompress, onRevert: _handleRevert),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
@@ -330,7 +400,14 @@ class _HomePageState extends State<HomePage> {
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
-        children: [TextButton.icon(onPressed: _openPreferences, icon: const Icon(Icons.settings, size: 18), label: const Text('首选项'))],
+        children: [
+          const Spacer(),
+          IconButton(
+            onPressed: _toggleSettingsPanel,
+            icon: Icon(_showSettingsPanel ? Icons.chevron_right : Icons.chevron_left, size: 20),
+            tooltip: _showSettingsPanel ? '收起压缩设置' : '展开压缩设置',
+          ),
+        ],
       ),
     );
   }

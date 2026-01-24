@@ -264,6 +264,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.2.2"
+  panes:
+    dependency: "direct main"
+    description:
+      name: panes
+      sha256: "3def20c2cadfc68f82f74d8ad54d925ecda9b0717c49cad2efd4d9af53103b6b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   path:
     dependency: "direct main"
     description:

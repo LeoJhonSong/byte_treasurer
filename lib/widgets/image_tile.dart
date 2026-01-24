@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/image_item.dart';
+import '../utils/format.dart';
 
 class ImageTile extends StatelessWidget {
   final ImageItem item;
@@ -86,10 +87,14 @@ class ImageTile extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              '${_formatSize(item.originalSize)}→${_formatSize(item.compressedSize!)}',
-                              style: const TextStyle(color: Colors.white, fontSize: 10),
+                            Flexible(
+                              child: Text(
+                                '${formatSize(item.originalSize)}→${formatSize(item.compressedSize!)}',
+                                style: const TextStyle(color: Colors.white, fontSize: 10),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
+                            const SizedBox(width: 4),
                             Text(
                               '-${((1 - item.ratio!) * 100).toStringAsFixed(0)}%',
                               style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold),
@@ -108,7 +113,7 @@ class ImageTile extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                         color: Colors.black54,
-                        child: Text(_formatSize(item.originalSize), style: const TextStyle(color: Colors.white, fontSize: 10)),
+                        child: Text(formatSize(item.originalSize), style: const TextStyle(color: Colors.white, fontSize: 10)),
                       ),
                     ),
                 ],
@@ -140,11 +145,5 @@ class ImageTile extends StatelessWidget {
     } else {
       onCompress();
     }
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 }

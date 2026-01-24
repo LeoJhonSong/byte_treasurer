@@ -45,20 +45,21 @@ JPG图片批量压缩工具, 支持拖放导入, 批量选择, 压缩/原图切�
         - `Focus`
           - `GestureDetector`
             - `Column`
-              - TopBar (`Container` + `TextButton`)
-              - `DropTarget`
-                - `ImageGrid` (StatelessWidget)
-                  - `ImageTile` (StatelessWidget) × N
+              - TopBar (`Container` + 收起/展开按钮)
+              - `PaneTheme` > `MultiPane` (panes包, 可拖拽分割)
+                - `DropTarget` > `ImageGrid` > `ImageTile` × N
+                - `CompressSettingsPanel`
               - StatusBar (`Container` + `Slider`)
 
-- `PreferencesPage` (StatefulWidget)
-  - `Scaffold`
-    - `AppBar` (保存按钮)
+- `CompressSettingsPanel` (StatefulWidget)
+  - `Container` (左边框)
     - `Column`
-      - CommandRow: `SegmentedButton`(模式) + `TextField`/命令预览
-      - ToolSelector: `DropdownButtonFormField`
-      - ParamsGrid: 双栏`Row` > `ListView` > ParamWidget
-        - `_buildSlider` / `_buildSwitch` / `_buildPicker`
+      - ModeRow × 3 (总大小/单文件/参数配置模式)
+      - ParamConfigSection
+        - CommandRow: `SegmentedButton`(模式) + `TextField`/命令预览
+        - ToolSelector: `DropdownButtonFormField`
+        - ParamsGrid: 双栏`Row` > `ListView` > ParamWidget
+      - PreviewSection: `ImageTile` 压缩预览
 
 ## 快捷键 (`intents.dart`)
 
@@ -78,8 +79,8 @@ JPG图片批量压缩工具, 支持拖放导入, 批量选择, 压缩/原图切�
 
 | 类 | 维护的状态 |
 |------|------|
-| `_HomePageState` | `_items`图片列表, `_selectedPaths`选中集合, `_isDragging`拖放态, `_tileWidthRatio`图块宽度比, `_lastSelectedIndex`上次选中索引, `_config`压缩配置 |
-| `_PreferencesPageState` | `_config`当前编辑配置, `_customCommandController`自定义命令控制器 |
+| `_HomePageState` | `_items`图片列表, `_selectedPaths`选中集合, `_isDragging`拖放态, `_tileWidthRatio`图块宽度比, `_lastSelectedIndex`上次选中索引, `_config`压缩配置, `_showSettingsPanel`设置面板可见性, `_paneController` (panes) |
+| `_CompressSettingsPanelState` | `_config`当前编辑配置, `_customCommandController`自定义命令控制器, `_totalSizeController`/`_fileSizeController`大小输入, 预览状态 |
 | `ImageItem` | `path`原路径, `originalSize`, `compressedPath`, `compressedSize`, `showCompressed`, `isCompressing` |
 | `CompressConfig` | `formatId`, `toolId`, `useCustomCommand`, `customCommand`, `params`参数值Map |
 | `ConfigSchema` (静态) | `_tools`工具定义Map, `_formats`格式定义Map |
@@ -96,7 +97,7 @@ JPG图片批量压缩工具, 支持拖放导入, 批量选择, 压缩/原图切�
 | `_handleCompress` | `Future.wait` 并行调用 `_compressor.compress` |
 | `ImageCompressor._getCacheDir` | `getApplicationCacheDirectory` 获取系统缓存目录 |
 | `ImageCompressor.compress` | `Process.run` 执行外部压缩命令 |
-| `_openPreferences` | `Navigator.push` 等待首选项页返回 |
+| `CompressSettingsPanel._runPreview` | 实时压缩预览 (防抖300ms) |
 
 ## UI交互逻辑
 
@@ -112,9 +113,10 @@ JPG图片批量压缩工具, 支持拖放导入, 批量选择, 压缩/原图切�
 | Esc | 取消全部选择 |
 | Ctrl+/-/滚轮 | 缩放图片显示大小 |
 | 右键点击图片 | 若未选中则先选中; 未压缩则压缩, 已压缩则切换预览 |
-| 点击首选项按钮 | 打开PreferencesPage |
+| 点击TopBar收起按钮 | 隐藏/显示压缩设置面板 |
+| 拖动分割线 | 调整浏览/设置面板宽度比例 |
 
-### PreferencesPage
+### CompressSettingsPanel
 
 | 操作 | 行为 |
 |------|------|
@@ -123,15 +125,16 @@ JPG图片批量压缩工具, 支持拖放导入, 批量选择, 压缩/原图切�
 | 切换工具 | 保留参数值, 不支持的参数变灰+Tooltip |
 | 修改参数 | 实时更新命令预览 |
 | 点击复制按钮 | 复制当前命令到剪贴板 |
-| 点击保存 | 返回配置到HomePage |
+| 修改任何配置 | 实时回调 `onConfigChanged` 更新主页状态, 防抖触发预览 |
+| 点击模式行 | 切换压缩模式 (总大小/单文件/参数配置) |
 
 ## 关键数据流
 
 1. 启动 → `ConfigSchema.load()` 解析YAML → 填充`_tools`/`_formats`静态Map
 2. 拖放文件 → `_handleFilesDropped` → 创建`ImageItem`加入`_items`
 3. 快捷键 → `Shortcuts`匹配 → 触发`Intent` → `Actions`执行对应回调
-4. 右键压缩 → `_handleCompress` → `CompressConfig.buildCommand` → `TemplateRenderer.renderArgs` → `Process.run`
-5. 首选项保存 → `Navigator.pop(config)` → `_HomePageState`更新`_config`
+4. 右键压缩 → `_handleCompress` → 根据模式选择算法 → `Process.run`
+5. 设置面板配置变更 → `onConfigChanged` 回调 → `_HomePageState`即时更新`_config`
 
 ## 配置文件 (`assets/builtin_tools.yaml`)
 
