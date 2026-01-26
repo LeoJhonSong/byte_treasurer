@@ -7,7 +7,7 @@ import 'color_schemes.dart';
 import 'models/image_item.dart';
 import 'models/compress_config.dart';
 import 'models/config_schema.dart';
-import 'widgets/image_grid.dart';
+import 'widgets/browse_panel.dart';
 import 'services/image_compressor.dart';
 import 'pages/preferences_page.dart';
 import 'utils/format.dart';
@@ -36,6 +36,18 @@ class MainApp extends StatelessWidget {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: colorScheme.outlineVariant),
+        ),
+        textStyle: TextStyle(color: colorScheme.onSurface, fontSize: 12),
+        textAlign: TextAlign.center,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        preferBelow: true,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         border: const OutlineInputBorder(),
         isDense: true,
@@ -384,7 +396,7 @@ class _HomePageState extends State<HomePage> {
       child: SizedBox.expand(
         child: Container(
           decoration: BoxDecoration(border: _isDragging ? Border.all(color: Theme.of(context).colorScheme.primary, width: 3) : null),
-          child: ImageGrid(items: _items, selectedPaths: _selectedPaths, tileWidth: tileWidth, onTap: _handleTap, onCompress: _handleCompress, onRevert: _handleRevert),
+          child: BrowsePanel(items: _items, selectedPaths: _selectedPaths, tileWidth: tileWidth, onTap: _handleTap, onCompress: _handleCompress, onRevert: _handleRevert),
         ),
       ),
     );

@@ -3,8 +3,10 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_the_tooltip/just_the_tooltip.dart';
 import '../models/compress_config.dart';
 import '../models/config_schema.dart';
 import '../models/image_item.dart';
@@ -124,20 +126,28 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
         color: colorScheme.surface,
         border: Border(left: BorderSide(color: colorScheme.outlineVariant)),
       ),
-      child: Column(
-        children: [
-          // 模式1: 总大小上限
-          _buildModeRow(CompressMode.totalSizeLimit, '总大小上限', Icons.folder_outlined, colorScheme),
-          // 模式2: 单文件上限
-          _buildModeRow(CompressMode.fileSizeLimit, '单文件上限', Icons.insert_drive_file_outlined, colorScheme),
-          // 模式3: 参数配置 (占据剩余空间)
-          Expanded(child: _buildParamConfigMode(colorScheme)),
+      child: LayoutBuilder(builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 模式1: 总大小上限
+                _buildModeRow(CompressMode.totalSizeLimit, '总大小上限', Icons.folder_outlined, colorScheme),
+                // 模式2: 单文件上限
+                _buildModeRow(CompressMode.fileSizeLimit, '单文件上限', Icons.insert_drive_file_outlined, colorScheme),
+                // 模式3: 参数配置
+                _buildParamConfigMode(colorScheme),
 
-          // 预览区域
-          const Divider(height: 1),
-          _buildPreviewSection(colorScheme),
-        ],
-      ),
+                // 预览区域
+                const Divider(height: 1),
+                _buildPreviewSection(colorScheme),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 
@@ -211,7 +221,7 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
 
   Widget _buildParamConfigMode(ColorScheme colorScheme) {
     final isSelected = _config.mode == CompressMode.paramConfig;
-    final bgColor = isSelected ? colorScheme.primaryContainer.withValues(alpha: 0.3) : colorScheme.surface;
+    final bgColor = isSelected ? colorScheme.primaryContainer : colorScheme.surface;
     final fgColor = isSelected ? colorScheme.onSurface : colorScheme.onSurfaceVariant;
     final format = _config.formatDef;
     final tool = _config.toolDef;
@@ -256,7 +266,10 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
                     child: _buildToolSelector(tool),
                   ),
                   const Divider(height: 1),
-                  Expanded(child: _buildParamsGrid(format, colorScheme)),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _buildParamsGrid(format, colorScheme),
+                  ),
                 ],
               ],
             ),
@@ -269,76 +282,93 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
   Widget _buildCommandRow(ColorScheme colorScheme) {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          // 左侧: 模式切换
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: false, label: Text('可视化'), icon: Icon(Icons.tune)),
-              ButtonSegment(value: true, label: Text('自定义'), icon: Icon(Icons.edit)),
-            ],
-            selected: {_config.useCustomCommand},
-            onSelectionChanged: (v) {
-              setState(() {
-                _config.useCustomCommand = v.first;
-                if (!_config.useCustomCommand) {
-                  _customCommandController.text = _config.toCommandString();
-                }
-              });
-              _notifyConfigChanged();
-            },
-          ),
-          const SizedBox(width: 16),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth.isFinite && constraints.maxWidth < 320;
 
-          // 右侧: 命令预览/编辑
-          Expanded(
-            child: _config.useCustomCommand
-                ? TextField(
-                    controller: _customCommandController,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'cjpegli {input} {output} -q 85',
-                      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+        final modeSwitch = SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, label: Text('可视化'), icon: Icon(Icons.tune)),
+            ButtonSegment(value: true, label: Text('自定义'), icon: Icon(Icons.edit)),
+          ],
+          selected: {_config.useCustomCommand},
+          onSelectionChanged: (v) {
+            setState(() {
+              _config.useCustomCommand = v.first;
+              if (!_config.useCustomCommand) {
+                _customCommandController.text = _config.toCommandString();
+              }
+            });
+            _notifyConfigChanged();
+          },
+        );
+
+        final commandEditor = _config.useCustomCommand
+            ? TextField(
+                controller: _customCommandController,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'cjpegli {input} {output} -q 85',
+                  hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                ),
+                onChanged: (v) {
+                  _config.customCommand = v;
+                  _notifyConfigChanged();
+                },
+              )
+            : Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _config.toCommandString(),
+                        style: TextStyle(fontFamily: 'monospace', fontSize: 13, color: colorScheme.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    onChanged: (v) {
-                      _config.customCommand = v;
-                      _notifyConfigChanged();
-                    },
-                  )
-                : Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: colorScheme.outline.withValues(alpha: 0.5)),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 18),
+                      tooltip: '复制命令',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: _config.toCommandString()));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)));
+                      },
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _config.toCommandString(),
-                            style: TextStyle(fontFamily: 'monospace', fontSize: 13, color: colorScheme.onSurface),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 18),
-                          tooltip: '复制命令',
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _config.toCommandString()));
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)));
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-          ),
-        ],
-      ),
+                  ],
+                ),
+              );
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(alignment: Alignment.centerLeft, child: modeSwitch),
+              const SizedBox(height: 8),
+              commandEditor,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            // 左侧: 模式切换
+            modeSwitch,
+            const SizedBox(width: 16),
+
+            // 右侧: 命令预览/编辑
+            Expanded(child: commandEditor),
+          ],
+        );
+      }),
     );
   }
 
@@ -348,8 +378,8 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
 
     return Opacity(
       opacity: enabled ? 1.0 : 0.5,
-      child: IgnorePointer(
-        ignoring: !enabled,
+      child: AbsorbPointer(
+        absorbing: !enabled,
         child: DropdownButtonFormField<String>(
           initialValue: _config.toolId,
           decoration: const InputDecoration(labelText: '工具'),
@@ -377,22 +407,28 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
 
     return Opacity(
       opacity: _config.useCustomCommand ? 0.5 : 1.0,
-      child: IgnorePointer(
-        ignoring: _config.useCustomCommand,
+      child: AbsorbPointer(
+        absorbing: _config.useCustomCommand,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: ListView(
+              child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                children: leftParams.map((p) => _buildParamWidget(p)).toList(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: leftParams.map((p) => _buildParamWidget(p)).toList(),
+                ),
               ),
             ),
             const VerticalDivider(width: 1),
             Expanded(
-              child: ListView(
+              child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                children: rightParams.map((p) => _buildParamWidget(p)).toList(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: rightParams.map((p) => _buildParamWidget(p)).toList(),
+                ),
               ),
             ),
           ],
@@ -413,8 +449,27 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
     };
 
     if (!supported) {
-      child = Tooltip(
-        message: tooltipMsg,
+      final colorScheme = Theme.of(context).colorScheme;
+      child = JustTheTooltip(
+        preferredDirection: AxisDirection.up,
+        // FIXME: 当设置面板宽度窄导致高度高时, tooltip部分在控件内, 鼠标悬浮到tooltip上会闪烁.
+        tailLength: 8,
+        tailBaseWidth: 12,
+        offset: 6,
+        margin: const EdgeInsets.all(8),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: colorScheme.outlineVariant),
+          ),
+          child: Text(
+            tooltipMsg,
+            style: TextStyle(color: colorScheme.onSurface, fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+        ),
         child: Opacity(opacity: 0.4, child: IgnorePointer(child: child)),
       );
     }
@@ -433,8 +488,10 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(child: Text(param.label)),
+              Flexible(child: Text(param.label)),
+              const SizedBox(width: 8),
               Text(value.round().toString(), style: const TextStyle(fontWeight: FontWeight.w500)),
             ],
           ),
@@ -522,35 +579,41 @@ class _CompressSettingsPanelState extends State<CompressSettingsPanel> {
 
     return Container(
       padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // 复用 ImageTile 组件
-          ImageTile(
-            item: previewItem,
-            width: 120,
-            maxHeight: 120,
-            isSelected: false,
-            onTap: (_, _) {},
-            onCompress: () {},
-          ),
-          const SizedBox(width: 16),
+      child: LayoutBuilder(builder: (context, constraints) {
+        // 根据可用宽度自适应图片宽度, 保持在合理范围内，避免在窄容器中导致 Row 溢出
+        final maxAvail = constraints.maxWidth.isFinite ? constraints.maxWidth : 300.0;
+        final tileWidth = math.max(56.0, math.min(120.0, maxAvail * 0.45));
 
-          // 错误信息 或 刷新按钮
-          if (_previewError != null)
-            Expanded(child: Text(_previewError!, style: TextStyle(color: colorScheme.error, fontSize: 12)))
-          else
-            const Spacer(),
-
-          // 刷新按钮 (仅自定义命令模式)
-          if (_config.useCustomCommand)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: '重新预览',
-              onPressed: _isPreviewing ? null : _triggerPreview,
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 复用 ImageTile 组件
+            ImageTile(
+              item: previewItem,
+              width: tileWidth,
+              maxHeight: 120,
+              isSelected: false,
+              onTap: (_, _) {},
+              onCompress: () {},
             ),
-        ],
-      ),
+            const SizedBox(width: 16),
+
+            // 错误信息 或 刷新按钮
+            if (_previewError != null)
+              Expanded(child: Text(_previewError!, style: TextStyle(color: colorScheme.error, fontSize: 12)))
+            else
+              const Spacer(),
+
+            // 刷新按钮 (仅自定义命令模式)
+            if (_config.useCustomCommand)
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: '重新预览',
+                onPressed: _isPreviewing ? null : _triggerPreview,
+              ),
+          ],
+        );
+      }),
     );
   }
 }

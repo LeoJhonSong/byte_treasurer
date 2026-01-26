@@ -1,11 +1,11 @@
-/// 图片网格组件, Wrap布局自适应排列.
+/// 浏览面板组件, Wrap布局自适应排列.
 library;
 
 import 'package:flutter/material.dart';
 import '../models/image_item.dart';
 import 'image_tile.dart';
 
-class ImageGrid extends StatelessWidget {
+class BrowsePanel extends StatelessWidget {
   final List<ImageItem> items;
   final Set<String> selectedPaths;
   final double tileWidth;
@@ -13,7 +13,7 @@ class ImageGrid extends StatelessWidget {
   final void Function(String path) onCompress;
   final void Function(String path)? onRevert;
 
-  const ImageGrid({
+  const BrowsePanel({
     super.key,
     required this.items,
     required this.selectedPaths,
